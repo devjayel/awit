@@ -246,7 +246,7 @@ jobs:
               
               # Update environment variables
               sed -i 's/APP_NAME=.*/APP_NAME="ICS"/' .env
-              sed -i 's|APP_URL=.*|APP_URL="https://ics211formsystem.com"|' .env
+              sed -i 's|APP_URL=.*|APP_URL="https://red-spider-777621.hostingersite.com"|' .env
               
               # Database configuration
               sed -i 's/DB_HOST=.*/DB_HOST=127.0.0.1/' .env
