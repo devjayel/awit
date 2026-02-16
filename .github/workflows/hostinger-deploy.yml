@@ -1,9 +1,8 @@
-name: Hostinger Deployment Workflow
+name: Hostinger Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -22,14 +21,6 @@ jobs:
           extensions: mbstring, xml, bcmath, pdo_mysql, pdo_sqlite, gd, zip
           coverage: none
 
-      - name: Setup MySQL
-        uses: shogo82148/actions-setup-mysql@v1
-        with:
-          mysql-version: '8.0'
-
-      - name: Create Test Database
-        run: mysql -uroot -h127.0.0.1 -e 'CREATE DATABASE IF NOT EXISTS testing;'
-
       - name: Copy .env
         run: |
           if [ -f .env.example ]; then
@@ -39,14 +30,6 @@ jobs:
             echo "APP_ENV=testing" > .env
             echo "APP_KEY=" >> .env
           fi
-          
-          # Configure MySQL for testing
-          sed -i 's/DB_CONNECTION=.*/DB_CONNECTION=mysql/' .env
-          sed -i 's/DB_HOST=.*/DB_HOST=127.0.0.1/' .env
-          sed -i 's/DB_PORT=.*/DB_PORT=3306/' .env
-          sed -i 's/DB_DATABASE=.*/DB_DATABASE=testing/' .env
-          sed -i 's/DB_USERNAME=.*/DB_USERNAME=root/' .env
-          sed -i 's/DB_PASSWORD=.*/DB_PASSWORD=/' .env
 
       - name: Install Composer Dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
@@ -146,8 +129,10 @@ jobs:
         if: steps.check_package.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: vite-build
+          name: build-assets
           path: public/build/
+          if-no-files-found: ignore
+          retention-days: 1
 
   deploy:
     name: Deploy to Hostinger
@@ -168,7 +153,7 @@ jobs:
       - name: Download Built Assets
         uses: actions/download-artifact@v4
         with:
-          name: vite-build
+          name: build-assets
           path: public/build/
         continue-on-error: true
 
@@ -207,11 +192,6 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -t rsa -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Create Build Directory on Server
-        continue-on-error: true
-        run: |
-          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "mkdir -p ~/domains/${{ secrets.WEBSITE_FOLDER }}/public/build"
-
       - name: Copy Build Files to Target Server
         continue-on-error: true
         run: |
@@ -240,32 +220,6 @@ jobs:
             git checkout main
             git reset --hard origin/main
             
-            # Configure .env file
-            if [ -f .env.example ]; then
-              cp .env.example .env
-              
-              # Update environment variables
-              sed -i 's/APP_NAME=.*/APP_NAME="ICS"/' .env
-              sed -i 's|APP_URL=.*|APP_URL="https://red-spider-777621.hostingersite.com"|' .env
-              
-              # Database configuration
-              sed -i 's/DB_HOST=.*/DB_HOST=127.0.0.1/' .env
-              sed -i 's/DB_PORT=.*/DB_PORT=3306/' .env
-              sed -i "s/DB_DATABASE=.*/DB_DATABASE=\"${{ secrets.DB_DATABASE }}\"/" .env
-              sed -i "s/DB_USERNAME=.*/DB_USERNAME=\"${{ secrets.DB_USERNAME }}\"/" .env
-              sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=\"${{ secrets.DB_SECRET }}\"/" .env
-              
-              # Mail configuration
-              sed -i 's/MAIL_MAILER=.*/MAIL_MAILER=smtp/' .env
-              sed -i 's/MAIL_HOST=.*/MAIL_HOST=smtp.hostinger.com/' .env
-              sed -i 's/MAIL_PORT=.*/MAIL_PORT=465/' .env
-              sed -i "s/MAIL_USERNAME=.*/MAIL_USERNAME=\"${{ secrets.MAIL_USERNAME }}\"/" .env
-              sed -i "s/MAIL_PASSWORD=.*/MAIL_PASSWORD=\"${{ secrets.MAIL_SECRET }}\"/" .env
-              sed -i 's/MAIL_ENCRYPTION=.*/MAIL_ENCRYPTION=ssl/' .env
-              
-              echo "✅ .env file configured"
-            fi
-            
             echo "📦 Installing Composer dependencies..."
             composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
             
@@ -278,14 +232,8 @@ jobs:
             
             echo "🔧 Running Laravel setup commands..."
             
-            # Generate application key
-            php artisan key:generate
-
-            # Storage Link
-            php artisan storage:link
-
             # Run migrations
-            php artisan migrate:fresh --seed
+            php artisan migrate --force
             
             # Clear and cache configuration
             php artisan config:clear
